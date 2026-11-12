@@ -120,11 +120,10 @@ def bibliothek():
         W.append(Workout(name, beschr, segs, test=test, kategorie=kat))
 
     # ===== Standard (feste Watt) =====
-    W.append(Workout("Standard 1 h · 240 W",
-                     "2,5 min Rampe auf 240 W, 55 min konstant 240 W, 2,5 min Rampe zurück. "
-                     "Feste Watt – unabhängig von der FTP.",
-                     [Seg(150, 120, 240, "Rampe hoch"), Seg(M(55), 240, 240, "240 W konstant"),
-                      Seg(150, 240, 120, "Rampe runter")], kategorie="Standard", absolut=True))
+    W.append(Workout("Standard 1 h · 75 % FTP",
+                     "2,5 min Rampe auf 75 % FTP, 55 min konstant 75 % FTP, 2,5 min Rampe zurück.",
+                     [Seg(150, 0.40, 0.75, "Rampe hoch"), Seg(M(55), 0.75, 0.75, "Konstant"),
+                      Seg(150, 0.75, 0.40, "Rampe runter")], kategorie="Standard"))
 
     # ===== Tests =====
     rampe = [Seg(M(5), 0.45, 0.45, "Einfahren")]
