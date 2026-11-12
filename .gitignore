@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+# persönliche Daten
+einstellungen.json
+verlauf.json
+fahrten/
+strava.json
+# eigene Workout-Dateien
+workouts/*
+!workouts/README.md
