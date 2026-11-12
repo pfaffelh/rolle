@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """ERG-Training nach FTP für FTMS-Rollen (z. B. Wahoo KICKR)."""
 import json
+import os
+import socket
+import threading
 import time
 import tkinter as tk
 from collections import deque
@@ -614,11 +617,60 @@ class App:
         self.root.after(0, upd)
 
 
+# ------------------------------------------------------------ nur ein Fenster
+SPERRE = "\0ergtraining-" + str(os.getuid())  # abstrakter Unix-Socket, verschwindet mit dem Prozess
+
+
+def einzige_instanz():
+    """Gibt einen lauschenden Socket zurück – oder None, wenn das Programm schon läuft
+    (dann wurde das laufende Fenster bereits nach vorne geholt)."""
+    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        srv.bind(SPERRE)
+    except OSError:
+        try:
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as c:
+                c.settimeout(2)
+                c.connect(SPERRE)
+                c.sendall(b"zeigen")
+        except OSError:
+            pass
+        return None
+    srv.listen(2)
+    return srv
+
+
+def nach_vorne(app):
+    w = app.mini if getattr(app, "mini", None) else app.root
+    w.deiconify()
+    w.lift()
+    w.attributes("-topmost", True)
+    if w is app.root:
+        w.after(300, lambda: w.attributes("-topmost", False))
+    w.focus_force()
+
+
+def lausche(srv, app):
+    while True:
+        try:
+            conn, _ = srv.accept()
+            with conn:
+                conn.recv(16)
+            app.root.after(0, lambda: nach_vorne(app))
+        except OSError:
+            return
+
+
 if __name__ == "__main__":
+    srv = einzige_instanz()
+    if srv is None:
+        print("ERG-Training läuft bereits – Fenster wurde nach vorne geholt.")
+        raise SystemExit(0)
     root = tk.Tk(className="ergtraining")
     try:
         root.iconphoto(True, tk.PhotoImage(file=str(HIER / "icon.png")))
     except Exception:
         pass
-    App(root)
+    app = App(root)
+    threading.Thread(target=lausche, args=(srv, app), daemon=True).start()
     root.mainloop()
