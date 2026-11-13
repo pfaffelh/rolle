@@ -9,7 +9,7 @@ import tkinter as tk
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
 import metriken
 
@@ -174,6 +174,8 @@ class App:
         m.geometry(self.cfg.get("mini_geo", "430x205"))
         m.minsize(300, 150)
         m.attributes("-topmost", True)
+        # -alpha wirkt unter X11 erst, wenn das Fenster sichtbar ist
+        m.after(200, lambda: self._setze_alpha(self.cfg.get("mini_alpha", 0.8)))
         m.configure(bg="white")
         st = ttk.Style()
         st.configure("MiniBig.TLabel", font=("Helvetica", 30, "bold"), background="white")
@@ -205,9 +207,24 @@ class App:
 
         self._tasten(m)
         m.bind("<m>", lambda e: self.mini_aus())
+        # Mausrad über dem Mini-Fenster: Durchsichtigkeit einstellen
+        m.bind("<Button-4>", lambda e: self._setze_alpha(self.cfg.get("mini_alpha", 0.8) + 0.05, True))
+        m.bind("<Button-5>", lambda e: self._setze_alpha(self.cfg.get("mini_alpha", 0.8) - 0.05, True))
+        m.bind("<MouseWheel>", lambda e: self._setze_alpha(
+            self.cfg.get("mini_alpha", 0.8) + (0.05 if e.delta > 0 else -0.05), True))
         m.protocol("WM_DELETE_WINDOW", self.mini_aus)
         self.root.iconify()
         self.cfg["mini"] = True; self.speichere_cfg()
+
+    def _setze_alpha(self, a, speichern=False):
+        a = round(min(1.0, max(0.3, a)), 2)
+        self.cfg["mini_alpha"] = a
+        try:
+            self.mini.attributes("-alpha", a)
+        except Exception:
+            pass
+        if speichern:
+            self.speichere_cfg()
 
     def mini_aus(self):
         if not getattr(self, "mini", None):
@@ -216,6 +233,48 @@ class App:
         self.cfg["mini"] = False; self.speichere_cfg()
         self.mini.destroy(); self.mini = None
         self.root.deiconify(); self.root.lift()
+
+    # ------------------------------------------------------------ Meldungen
+    def dialog(self, titel, text, frage=False, kopf=None, farbe="#222"):
+        """Meldungsfenster, das immer im Vordergrund liegt – auch über dem Mini-Fenster.
+        Mit frage=True gibt es Ja/Nein und liefert True bei Ja."""
+        eltern = self.mini if getattr(self, "mini", None) else self.root
+        d = tk.Toplevel(self.root)
+        d.title(titel)
+        d.resizable(False, False)
+        if eltern.winfo_viewable():
+            d.transient(eltern)
+        d.attributes("-topmost", True)
+        rahmen = ttk.Frame(d, padding=16); rahmen.pack(fill="both", expand=True)
+        if kopf:
+            ttk.Label(rahmen, text=kopf, font=("Helvetica", 16, "bold"), foreground=farbe).pack(anchor="w", pady=(0, 8))
+        ttk.Label(rahmen, text=text, justify="left", font=("Helvetica", 11)).pack(anchor="w")
+        antwort = {"ja": False}
+
+        def schliesse(ja):
+            antwort["ja"] = ja
+            d.destroy()
+        knoepfe = ttk.Frame(rahmen); knoepfe.pack(anchor="e", pady=(14, 0))
+        if frage:
+            ttk.Button(knoepfe, text="Nein", command=lambda: schliesse(False)).pack(side="right", padx=(6, 0))
+            ja = ttk.Button(knoepfe, text="Ja", command=lambda: schliesse(True)); ja.pack(side="right")
+        else:
+            ja = ttk.Button(knoepfe, text="OK", command=lambda: schliesse(True)); ja.pack(side="right")
+        d.bind("<Return>", lambda e: schliesse(True))
+        d.bind("<Escape>", lambda e: schliesse(False))
+        d.protocol("WM_DELETE_WINDOW", lambda: schliesse(False))
+        d.update_idletasks()
+        x = (d.winfo_screenwidth() - d.winfo_reqwidth()) // 2
+        y = (d.winfo_screenheight() - d.winfo_reqheight()) // 3
+        d.geometry(f"+{x}+{y}")
+        d.deiconify(); d.lift(); d.focus_force(); ja.focus_set()
+        try:
+            d.grab_set()
+        except tk.TclError:
+            pass
+        self.root.bell()
+        d.wait_window()
+        return antwort["ja"]
 
     # ------------------------------------------------------------ Einstellungen
     def speichere_cfg(self):
@@ -265,6 +324,7 @@ class App:
     def workout_gewaehlt(self):
         if self.laeuft:
             return
+        self.ende_meldung = None
         self.wo_basis = self.liste[self.wo_combo.current()]
         self.wo = self.wo_basis.als_ftp(self.ftp)
         self.cfg["workout"] = self.wo.name; self.speichere_cfg()
@@ -284,9 +344,9 @@ class App:
     def start_pause(self):
         if not self.laeuft:
             if not (self.trainer.client and self.trainer.client.is_connected):
-                if not messagebox.askyesno("Nicht verbunden", "Die Rolle ist nicht verbunden. Trotzdem starten?"):
+                if not self.dialog("Nicht verbunden", "Die Rolle ist nicht verbunden. Trotzdem starten?", frage=True):
                     return
-            self.laeuft = True; self.pause = False
+            self.laeuft = True; self.pause = False; self.ende_meldung = None
             self.t = 0; self.seg_idx = -1; self.aufnahme = []; self.offset = 0
             self.off_text.set("100 %")
             self.startzeit = datetime.now(timezone.utc)
@@ -315,7 +375,7 @@ class App:
     def beenden(self):
         if not self.laeuft:
             return
-        if self.t < self.wo.dauer and not messagebox.askyesno("Beenden", "Workout beenden und speichern?"):
+        if self.t < self.wo.dauer and not self.dialog("Beenden", "Workout beenden und speichern?", frage=True):
             return
         self.fertig()
 
@@ -325,21 +385,35 @@ class App:
         self.start_text.set("▶ Start")
         self.manuell = int(self.ftp * 0.45)
         self.gesendet = None
-        pfad = self.speichere_tcx()
         watts = [s["p"] for s in self.aufnahme]
-        text = f"Gespeichert: {pfad.name}" if pfad else "Keine Daten aufgezeichnet."
+        fehler = None
+        try:
+            pfad = self.speichere_tcx()
+            if pfad and (not pfad.exists() or pfad.stat().st_size == 0):
+                raise OSError(f"Datei {pfad} fehlt oder ist leer")
+        except Exception as e:
+            pfad, fehler = None, f"Fahrt konnte nicht gespeichert werden:\n{e}"
+        if pfad:
+            text = f"Datei: {pfad}"
+        else:
+            text = fehler or "Zu wenig Daten aufgezeichnet – nichts gespeichert."
         if watts:
             text += f"\nDauer {mmss(len(watts))}, Ø {sum(watts) / len(watts):.0f} W"
             np_, if_, tss = metriken.np_if_tss(watts, self.ftp)
             if pfad and tss is not None:
-                metriken.eintragen({"datum": self.aufnahme[0]["zeit"].astimezone().isoformat(timespec="seconds"),
-                                    "name": self.wo.name, "dauer_s": len(watts), "ftp": self.ftp,
-                                    "np": np_, "if": if_, "tss": tss,
-                                    "avg_w": round(sum(watts) / len(watts)), "datei": pfad.name})
-                p = metriken.pmc()
-                self.pmc_anzeigen()
-                text += (f"\nNP {np_} W · IF {if_:.2f} · TSS {tss}"
-                         f"\nCTL {p['ctl']:.0f} · ATL {p['atl']:.0f} · TSB {p['tsb']:+.0f}")
+                try:
+                    metriken.eintragen({"datum": self.aufnahme[0]["zeit"].astimezone().isoformat(timespec="seconds"),
+                                        "name": self.wo.name, "dauer_s": len(watts), "ftp": self.ftp,
+                                        "np": np_, "if": if_, "tss": tss,
+                                        "avg_w": round(sum(watts) / len(watts)), "datei": pfad.name})
+                    p = metriken.pmc()
+                    self.pmc_anzeigen()
+                    text += (f"\nNP {np_} W · IF {if_:.2f} · TSS {tss}"
+                             f"\nCTL {p['ctl']:.0f} · ATL {p['atl']:.0f} · TSB {p['tsb']:+.0f}"
+                             f"\n\nIm Verlauf eingetragen.")
+                except Exception as e:
+                    fehler = f"Eintrag in verlauf.json fehlgeschlagen: {e}"
+                    text += "\n\n⚠ " + fehler
         neu = None
         if self.wo.test == "rampe":
             b = beste_mittel(watts, 60)
@@ -356,11 +430,18 @@ class App:
             if b:
                 neu = round(0.95 * b)
                 text += f"\n\nBeste 20-min-Leistung: {b:.0f} W\nGeschätzte FTP (95 %): {neu} W"
+        if pfad and not fehler:
+            kopf, farbe = "✓ Fahrt gespeichert", "#2fb344"
+        else:
+            kopf, farbe = "⚠ Nicht (vollständig) gespeichert", "#d63939"
+        self.ende_meldung = f"{kopf} · {datetime.now():%H:%M}" + (f" · {pfad.name}" if pfad else "")
+        self.seg_text.set(self.ende_meldung)
         if neu:
-            if messagebox.askyesno("Test-Ergebnis", text + f"\n\nNeue FTP {neu} W übernehmen (bisher {self.ftp} W)?"):
+            if self.dialog("Test-Ergebnis", text + f"\n\nNeue FTP {neu} W übernehmen (bisher {self.ftp} W)?",
+                           frage=True, kopf=kopf, farbe=farbe):
                 self.ftp_var.set(neu); self.ftp_geaendert()
         else:
-            messagebox.showinfo("Workout beendet", text)
+            self.dialog("Workout beendet", text, kopf=kopf, farbe=farbe)
         self.status_cb("Workout beendet. " + (f"Datei: {pfad}" if pfad else ""))
 
     # ------------------------------------------------------------ Takt (jede Sekunde)
@@ -436,8 +517,11 @@ class App:
             return
         i, im = self.segment_bei(self.t)
         if not self.laeuft:
-            self.seg_text.set(f"{self.wo.name} – {mmss(self.wo.dauer)}" + ("" if self.laeuft else
-                              f"   (ohne Workout: ERG {self.manuell} W, ↑/↓ ändert)"))
+            if getattr(self, "ende_meldung", None):
+                self.seg_text.set(self.ende_meldung)
+            else:
+                self.seg_text.set(f"{self.wo.name} – {mmss(self.wo.dauer)}"
+                                  f"   (ohne Workout: ERG {self.manuell} W, ↑/↓ ändert)")
             self.next_text.set("")
             self.v["seg"].set("–"); self.v["rest"].set(mmss(self.wo.dauer))
             return
@@ -593,7 +677,7 @@ class App:
         if getattr(self, "mini", None):
             self.cfg["mini_geo"] = self.mini.geometry(); self.speichere_cfg()
         if self.laeuft and self.aufnahme:
-            if messagebox.askyesno("Beenden", "Workout läuft. Vorher speichern?"):
+            if self.dialog("Beenden", "Workout läuft. Vorher speichern?", frage=True):
                 self.speichere_tcx()
         try:
             self.trainer.run(self.trainer.disconnect()).result(timeout=3)
