@@ -174,8 +174,10 @@ class App:
         m.geometry(self.cfg.get("mini_geo", "430x205"))
         m.minsize(300, 150)
         m.attributes("-topmost", True)
-        # -alpha wirkt unter X11 erst, wenn das Fenster sichtbar ist
-        m.after(200, lambda: self._setze_alpha(self.cfg.get("mini_alpha", 0.8)))
+        # -alpha wirkt unter X11 nur, wenn das Fenster schon angezeigt wird –
+        # daher bei jedem Anzeigen (Map) setzen, zur Sicherheit nochmals verzögert
+        m.bind("<Map>", lambda e: e.widget is m and self._setze_alpha(self.cfg.get("mini_alpha", 0.7)))
+        m.after(1000, lambda: self._setze_alpha(self.cfg.get("mini_alpha", 0.7)))
         m.configure(bg="white")
         st = ttk.Style()
         st.configure("MiniBig.TLabel", font=("Helvetica", 30, "bold"), background="white")
@@ -208,10 +210,10 @@ class App:
         self._tasten(m)
         m.bind("<m>", lambda e: self.mini_aus())
         # Mausrad über dem Mini-Fenster: Durchsichtigkeit einstellen
-        m.bind("<Button-4>", lambda e: self._setze_alpha(self.cfg.get("mini_alpha", 0.8) + 0.05, True))
-        m.bind("<Button-5>", lambda e: self._setze_alpha(self.cfg.get("mini_alpha", 0.8) - 0.05, True))
+        m.bind("<Button-4>", lambda e: self._setze_alpha(self.cfg.get("mini_alpha", 0.7) + 0.05, True))
+        m.bind("<Button-5>", lambda e: self._setze_alpha(self.cfg.get("mini_alpha", 0.7) - 0.05, True))
         m.bind("<MouseWheel>", lambda e: self._setze_alpha(
-            self.cfg.get("mini_alpha", 0.8) + (0.05 if e.delta > 0 else -0.05), True))
+            self.cfg.get("mini_alpha", 0.7) + (0.05 if e.delta > 0 else -0.05), True))
         m.protocol("WM_DELETE_WINDOW", self.mini_aus)
         self.root.iconify()
         self.cfg["mini"] = True; self.speichere_cfg()
