@@ -22,7 +22,7 @@ import, TSS/CTL/ATL/TSB tracking, TCX export and an always-on-top mini window. U
 - **Mini-Fenster** (Taste `m`): Ziel-/Ist-Watt, Trittfrequenz, Restzeit, Profil – immer im Vordergrund.
 - **Auswertung**: NP, IF, TSS je Fahrt sowie Fitness (CTL), Ermüdung (ATL) und Form (TSB).
 - **Aufzeichnung** jeder Fahrt als `.tcx` (lässt sich z. B. bei Strava oder intervals.icu hochladen).
-- **Mini-Fenster durchsichtig**: Mausrad über dem Fenster stellt die Deckkraft ein (30–100 %).
+- **Mini-Fenster durchsichtig und auf allen Arbeitsflächen**: Mausrad über dem Fenster stellt die Deckkraft ein (30–100 %).
 - Zeit läuft nur, solange getreten wird (Auto-Pause); Signalton bei Intervallwechsel.
 
 ## Installation (Ubuntu / Linux)

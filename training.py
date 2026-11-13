@@ -12,6 +12,7 @@ from pathlib import Path
 from tkinter import ttk
 
 import metriken
+import x11
 
 from ftms import Trainer
 from workouts import KATEGORIEN, alle_workouts
@@ -176,7 +177,7 @@ class App:
         m.attributes("-topmost", True)
         # -alpha wirkt unter X11 nur, wenn das Fenster schon angezeigt wird –
         # daher bei jedem Anzeigen (Map) setzen, zur Sicherheit nochmals verzögert
-        m.bind("<Map>", lambda e: e.widget is m and self._setze_alpha(self.cfg.get("mini_alpha", 0.7)))
+        m.bind("<Map>", lambda e: e.widget is m and self._mini_gezeigt())
         m.after(1000, lambda: self._setze_alpha(self.cfg.get("mini_alpha", 0.7)))
         m.configure(bg="white")
         st = ttk.Style()
@@ -217,6 +218,10 @@ class App:
         m.protocol("WM_DELETE_WINDOW", self.mini_aus)
         self.root.iconify()
         self.cfg["mini"] = True; self.speichere_cfg()
+
+    def _mini_gezeigt(self):
+        self._setze_alpha(self.cfg.get("mini_alpha", 0.7))
+        x11.auf_allen_arbeitsflaechen(self.mini)
 
     def _setze_alpha(self, a, speichern=False):
         a = round(min(1.0, max(0.3, a)), 2)
@@ -734,6 +739,7 @@ def nach_vorne(app):
     if w is app.root:
         w.after(300, lambda: w.attributes("-topmost", False))
     w.focus_force()
+    x11.aktivieren(w)
 
 
 def lausche(srv, app):
